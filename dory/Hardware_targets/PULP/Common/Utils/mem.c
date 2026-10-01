@@ -31,8 +31,12 @@ typedef struct pi_default_ram_conf ram_conf_t;
 #define ram_conf_init(conf) pi_default_ram_conf_init(conf)
 #endif
 
-#define BUFFER_SIZE 128
-static uint8_t buffer[BUFFER_SIZE];
+/* load_file_to_ram() reads through a buffer taken from the L2 heap for the load
+ * only, so it costs no L2 once the network is up. 4 KB loads about ten times
+ * faster than 128 B (each chunk is a flash read plus a HyperRAM write, and the
+ * fixed cost per transfer dominates); it halves down to 128 B if L2 is short. */
+#define LOAD_CHUNK_MAX 4096
+#define LOAD_CHUNK_MIN 128
 
 static struct pi_device flash;
 static flash_conf_t flash_conf;
@@ -150,12 +154,32 @@ size_t load_file_to_ram(const void *dest, const char *filename) {
 
   const size_t size = fd->size;
 
+  size_t chunk = LOAD_CHUNK_MAX;
+  uint8_t *buffer;
+  while ((buffer = pi_l2_malloc(chunk)) == NULL && chunk > LOAD_CHUNK_MIN) chunk /= 2;
+  if (buffer == NULL) {
+    printf("ERROR: No L2 to load %s! Exiting...", filename);
+    pmsis_exit(-5);
+  }
+
+  /* pi_fs_direct_read(), not pi_fs_read(). On the GAP8, readfs's pi_fs_read()
+   * advances its internal state only after issuing the flash read, and the
+   * completion runs in the PMSIS event kernel, which preempts a lower-priority
+   * caller (the kernel is priority 2, pmsis_kickoff's task priority 1). A read that
+   * completes first re-enters that state machine with stale state: the load hangs,
+   * or rarely writes a stale chunk, depending on timing. It only happens when the
+   * buffer and the file agree mod 8 -- otherwise readfs copies through its cache,
+   * which is immune -- so whether a network loaded reliably was a linker accident.
+   * pi_fs_direct_read() is one flash read per call. See the SDK's read_fs.c and
+   * examples/hyperbus_bench in the cf-lab repo. */
   size_t offset = 0;
   do {
-    const size_t read_bytes = pi_fs_read(fd, buffer, BUFFER_SIZE);
+    const size_t read_bytes = pi_fs_direct_read(fd, buffer, chunk);
     ram_write(dest + offset, buffer, read_bytes);
     offset += read_bytes;
   } while (offset < size);
 
+  pi_l2_free(buffer, chunk);
+  pi_fs_close(fd);
   return offset;
 }

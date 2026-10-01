@@ -89,6 +89,21 @@ static void dory_dma_push_lines(int dir, unsigned char *loc, unsigned char *ext,
                                 unsigned int size_1d, unsigned int n_lines,
                                 unsigned int stride);
 
+/* Waits for the transfers just pushed, from inside a per-row loop. Under
+ * SINGLE_CORE_DMA only core 0 runs those loops, so dory_dma_barrier() cannot be
+ * used there: it ends in a team barrier the other cores never reach from the
+ * loop. Each row's barrier then paired with one of theirs further on, until they
+ * had finished the whole network and core 0 waited forever (on the deck: a
+ * 40x30x32 pooling input, channel-tiled into a 3-D copy). The team barrier still
+ * happens once, in the layer's own dory_dma_barrier() after the copy. */
+static void dory_dma_wait_rows(DMA_copy *copy) {
+#ifdef SINGLE_CORE_DMA
+  mchan_transfer_wait(copy->tid);
+#else
+  dory_dma_barrier(copy);
+#endif
+}
+
 void dory_dma_memcpy_hwc_to_chw(DMA_copy *copy){
 #ifdef SINGLE_CORE_DMA
   if (pi_core_id() == 0) {
@@ -117,7 +132,7 @@ void dory_dma_memcpy_hwc_to_chw(DMA_copy *copy){
     dory_dma_push_lines(copy->dir, (unsigned char *) loc, (unsigned char *) ext,
                         1, (unsigned int) size_2d, (unsigned int) copy->stride_1d);
 #ifdef ALWAYS_BLOCK_DMA_TRANSFERS // needed on GAP8 board
-    dory_dma_barrier(copy);
+    dory_dma_wait_rows(copy);
 #endif
     ext += 1; // next channel
     loc += copy->number_of_1d_copies * copy->number_of_2d_copies;
@@ -240,7 +255,7 @@ void dory_dma_memcpy_3d_async(DMA_copy *copy) {
                         (unsigned int) copy->number_of_1d_copies,
                         (unsigned int) copy->stride_1d);
 #ifdef ALWAYS_BLOCK_DMA_TRANSFERS // needed on GAP8 board
-    dory_dma_barrier(copy);
+    dory_dma_wait_rows(copy);
 #endif
     loc += size_2d;
     ext += copy->stride_2d;

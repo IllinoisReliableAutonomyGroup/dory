@@ -99,9 +99,16 @@ class C_Parser_PULP(Parser_HW_to_C):
                     node.tiling_dimensions["L2"]["output_dimensions"][1]  = int(np.floor((node.tiling_dimensions["L2"]["input_dimensions"][1] - node.kernel_shape[0] + node.strides[0]) / node.strides[0]))
                 if node.tiling_dimensions["L3"]["output_dimensions"][1] > node.tiling_dimensions["L2"]["output_dimensions"][1]:
                     node.tiling_dimensions["L2"]["input_dimensions"][1]   = node.tiling_dimensions["L2"]["output_dimensions"][1] * node.strides[0] + node.kernel_shape[0] - node.strides[0]
+                # The L3 template runs a layer it tiles in bands of rows through
+                # _L2_p_t (the top band), _L2 (middle bands) and _L2_p_b (the
+                # bottom). A layer it tiles by weights alone is one band, which it
+                # runs through _L2: that one must pad top and bottom too, or every
+                # output row is computed from shifted input rows. (The template
+                # includes the band variants either way, so they are still written.)
+                single_band = tk['n_tile_x'] == 1 and tk['n_tile_y'] == 1
                 node.name = node.name + "_L2"
                 padding = node.pads
-                node.pads = [0, padding[1], 0, padding[3]]
+                node.pads = padding if single_band else [0, padding[1], 0, padding[3]]
                 tk = self.l2_template_keywords(node, backend_library)
                 TemplateWriter.write(tk, self.l2_template_mapping(node, backend_library))
                 node.name = node.name[:-3]

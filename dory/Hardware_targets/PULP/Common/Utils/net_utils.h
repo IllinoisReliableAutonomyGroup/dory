@@ -36,6 +36,11 @@ void checksum(const char *name, const uint8_t *d, size_t size, uint32_t sum_true
  */
 void dory_layer_done(int layer_id, const char *name, void *l2_output, size_t size);
 
+/* The same, for a layer whose output stays in L3 (the 3-level target's
+ * L3_output_layers[i]): l2_output would hold only its last tile, so this is
+ * called instead, with the output's address in HyperRAM. */
+void dory_layer_done_l3(int layer_id, const char *name, unsigned int l3_output);
+
 /* Weight-staging inspection hook -- the 3-level target only.
  *
  * Called once per layer whose weights are read from L3 into L2 as a whole blob

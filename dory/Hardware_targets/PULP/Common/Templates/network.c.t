@@ -338,6 +338,11 @@ void ${prefix}network_run_cluster(void *args) {
 % endif
     ${prefix}execute_layer_fork((void *) &largs);
 
+% if l3_supported:
+    if (L3_output_layers[i] == 1)
+      dory_layer_done_l3(i, Layers_name[i], (unsigned int) L3_output);
+    else
+% endif
     dory_layer_done(i, Layers_name[i], (void *) L2_output, activations_out_size[i]);
 % if 'Yes' in performance or 'Perf_final' in verbose_level:
     // performance measurements: end

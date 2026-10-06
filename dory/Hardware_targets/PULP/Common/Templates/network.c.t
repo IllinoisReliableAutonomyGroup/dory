@@ -23,7 +23,6 @@ l3_supported = DORY_HW_graph[0].HW_description['memory']['levels'] > 2
 #define DEFINE_CONSTANTS
 %if not l3_supported:
 #include "${prefix}weights.h"
-#include "cf_dory_profile.h"
 %endif
 #include "net_utils.h"
 #include "pmsis.h"
@@ -50,6 +49,7 @@ l3_supported = DORY_HW_graph[0].HW_description['memory']['levels'] > 2
 #define L3_OUTPUT_SIZE 1500000
 % endif
 static struct pi_device ${prefix}cluster_dev;
+static struct pi_cluster_conf ${prefix}cluster_conf;
 static void *L3_weights = NULL;
 static void *L3_input = NULL;
 static void *L3_output = NULL;
@@ -94,11 +94,10 @@ void ${prefix}execute_layer_fork(void *args) {
   layer_args_t *layer_args = (layer_args_t *)args;
   if (pi_core_id() == 0) layer_args->L1_buffer = pmsis_l1_malloc(${l1_buffer});
 
-  /* A failed allocation used to fall straight through, and the layer then ran
-   * against address 0 -- producing plausible-looking garbage instead of an
-   * error. DORY sizes this buffer assuming it is the sole user of cluster L1, so
-   * any application that also puts something there can hit this. The GAP9
-   * template has always checked; this one did not. */
+  /* A failed allocation must not fall through: the layer would run against
+   * address 0 and produce plausible-looking garbage instead of an error. DORY
+   * sizes this buffer assuming it is the sole user of cluster L1, so any
+   * application that also puts something there can hit this. */
   if (NULL == layer_args->L1_buffer) {
     if (pi_core_id() == 0) dory_l1_alloc_failed++;
 #ifdef VERBOSE
@@ -122,23 +121,18 @@ void ${prefix}execute_layer_fork(void *args) {
 
 struct ${prefix}network_run_token ${prefix}network_run_async(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir${", void *L2_input_h" if not l3_supported else ""})
 {
-  /* The device is file-scope, not a local. pi_device holds a pointer to driver
-   * state that pi_cluster_open() registers, so opening a fresh stack struct each
-   * call and then closing a *copy* of it (network_run_wait takes the token by
-   * value) leaves the driver inconsistent: the first inference works and the
-   * second one kills the chip. Measured in examples/nn_lab -- stage 1 dies on
-   * run 1, stage 2 (which opens the cluster once itself) runs indefinitely. */
-  struct pi_cluster_conf conf;
+  /* The device and its conf are file-scope: pi_open_from_conf() keeps a pointer
+   * to the conf, and pi_cluster_close() in network_run_wait() reads conf->id
+   * after this function returns. A stack conf would leave that pointer dangling:
+   * the close clears the wrong cluster slot, the next open reuses freed driver
+   * data, and the second inference halts the GAP8. */
   struct pi_cluster_task cluster_task = {0};
   // First open the cluster
-  pi_cluster_conf_init(&conf);
-  conf.id=0;
+  pi_cluster_conf_init(&${prefix}cluster_conf);
+  ${prefix}cluster_conf.id=0;
 <%
     # 5 slots are written unconditionally (args[0..4]); the no-L3 path writes
-    # args[5] as well. This used to say 4/5, one short in both branches, so
-    # the last store ran off the end of a stack array that shares its frame
-    # with cluster_dev, conf and cluster_task -- a silent, layout-dependent
-    # corruption of the very structs the cluster is about to be driven with.
+    # args[5] as well.
     n_args = 5 if l3_supported else 6
 %>\
   unsigned int args[${n_args}];
@@ -152,9 +146,7 @@ struct ${prefix}network_run_token ${prefix}network_run_async(void *l2_buffer, si
   % endif
   // open cluster...
   pi_cluster_task(&cluster_task, ${prefix}network_run_cluster, args);
-  pi_open_from_conf(&${prefix}cluster_dev, &conf);
-  /* A bare `return;` here was undefined behaviour: this function returns a
-   * struct. */
+  pi_open_from_conf(&${prefix}cluster_dev, &${prefix}cluster_conf);
   if (pi_cluster_open(&${prefix}cluster_dev))
     return (struct ${prefix}network_run_token) { .cluster_dev = {0} };
   // Then offload an entry point, this will get executed on the cluster controller
@@ -173,24 +165,6 @@ void ${prefix}network_run_wait(struct ${prefix}network_run_token token)
   pi_cluster_close(&${prefix}cluster_dev);
   % if 'Perf_final' in verbose_level:
   print_perf("Final", ${prefix}cycle_network_execution, ${MACs});
-  % endif
-  % if 'Yes' in performance or 'Perf_final' in verbose_level:
-  /* cf: compute-vs-orchestration split. Guarded on the same condition as
-   * cycle_network_execution's declaration above -- that variable does not exist
-   * otherwise, so this cannot be hoisted out of the guard however convenient
-   * that would be. cf_dory_prof_report is itself a no-op macro unless the app
-   * is compiled with CF_DORY_PROFILE=1, so a network generated with
-   * performance='Yes' and built without the define pays nothing.
-   *
-   * Enabling it needs BOTH: generate with performance='Yes' (or Perf_final),
-   * and compile with CF_DORY_PROFILE=1. Note that performance='Yes' also emits
-   * a per-layer print_perf, and 'Perf_final' emits the final one; the harness
-   * timing parser in examples/kernel_lab/host/dory_network_bench.py has been
-   * seen to mis-read those, reporting 59.5 us for a network that takes 14420.5.
-   * Check any run made with these flags against a run made without them before
-   * trusting its timings -- the profiler explains a measurement, it must not
-   * replace it. */
-  cf_dory_prof_report(${prefix}cycle_network_execution);
   % endif
 }
 
@@ -277,13 +251,8 @@ void ${prefix}network_run_cluster(void *args) {
     if (layer_with_weights[i] == 1)
       L2_weights = dmalloc(weights_size[i], dir);
 
-    if (allocate_layer[i] == 1) {
+    if (allocate_layer[i] == 1)
       cl_ram_read(L2_weights, L3_weights_curr, weights_size[i]);
-      /* Weak, empty by default -- see dory_weights_staged() in net_utils.h. The
-       * bytes have just crossed the HyperBus, and a short read here is silent:
-       * the layer would compute on whatever else was in this L2 buffer. */
-      dory_weights_staged(i, Layers_name[i], (void *) L2_weights, weights_size[i]);
-    }
     % else:
     L2_weights = Weights_name[i];
 % endif

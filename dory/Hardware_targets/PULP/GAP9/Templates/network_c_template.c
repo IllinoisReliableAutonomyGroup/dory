@@ -132,10 +132,7 @@ struct ${prefix}network_run_token ${prefix}network_run_async(void *l2_buffer, si
 #endif
 <%
     # 5 slots are written unconditionally (args[0..4]); the no-L3 path writes
-    # args[5] as well. This used to say 4/5, one short in both branches, so
-    # the last store ran off the end of a stack array that shares its frame
-    # with cluster_dev, conf and cluster_task -- a silent, layout-dependent
-    # corruption of the very structs the cluster is about to be driven with.
+    # args[5] as well.
     n_args = 5 if l3_supported else 6
 %>\
   unsigned int args[${n_args}];

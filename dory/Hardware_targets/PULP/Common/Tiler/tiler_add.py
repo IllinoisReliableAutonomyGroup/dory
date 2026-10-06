@@ -63,7 +63,8 @@ class Tiler_Add_PULP():
         else:
             input_L3 = 0
         # Both inputs are in L2 with the output (network.c reads the bypass back from L3
-        # beside them); counting one let an Add past the arena and dmalloc() returned NULL.
+        # beside them); counting only one lets an Add overrun the arena, and dmalloc()
+        # returns NULL.
         buffer_total = self.HW_node.input_activation_memory * int(np.ceil(1 + self.HW_node.second_input_activation_bits/self.HW_node.input_activation_bits)) + self.HW_node.output_activation_memory + self.HW_node.constants_memory
 
         if (buffer_total <= L2_memory) and input_L3==0:

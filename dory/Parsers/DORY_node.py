@@ -159,11 +159,10 @@ class DORY_node:
           Gemm    Y = A' B' + C, and B is [K,N] when transB=0, [N,K] when transB=1
           MatMul  Y = A B,       and B is always [K,N]
 
-        This replaces a shape heuristic (weights.shape[0] == input_channels) that
-        cannot distinguish the two whenever the layer is square -- it labelled
-        every square transB=1 Gemm "CinCout", so the backend transposed a tensor
-        that was already correct. Non-square layers are unaffected: there the
-        heuristic and the attribute always agree.
+        The shape heuristic (weights.shape[0] == input_channels) cannot tell the
+        two apart when the layer is square: it labels a square transB=1 Gemm
+        "CinCout", and the backend then transposes a tensor that is already
+        correct. On non-square layers the heuristic and the attribute agree.
         '''
         if self.op_type == "MatMul":
             return "CinCout"
@@ -172,7 +171,7 @@ class DORY_node:
             return "CoutCin" if getattr(self, "transB", 0) else "CinCout"
 
         # Not an op whose layout is defined by the standard (a fused or renamed
-        # node). Fall back to the old heuristic, but refuse to guess when it is
+        # node). Fall back to the shape heuristic, but refuse to guess when it is
         # provably ambiguous rather than emitting a silently transposed blob.
         shape = np.asarray(weights_value).shape
         if len(shape) >= 2 and shape[0] == shape[1]:

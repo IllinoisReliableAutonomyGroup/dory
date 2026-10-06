@@ -32,9 +32,9 @@ typedef struct pi_default_ram_conf ram_conf_t;
 #endif
 
 /* load_file_to_ram() reads through a buffer taken from the L2 heap for the load
- * only, so it costs no L2 once the network is up. 4 KB loads about ten times
- * faster than 128 B (each chunk is a flash read plus a HyperRAM write, and the
- * fixed cost per transfer dominates); it halves down to 128 B if L2 is short. */
+ * only, so it costs no L2 once the network is up. Each chunk is a flash read plus
+ * a HyperRAM write and the fixed cost per transfer dominates, so the buffer
+ * starts at 4 KB and halves down to 128 B only if L2 is short. */
 #define LOAD_CHUNK_MAX 4096
 #define LOAD_CHUNK_MIN 128
 
@@ -49,9 +49,8 @@ static ram_conf_t ram_conf;
 
 
 /* Weak, empty by default. Every failure below reports itself with printf() and
- * then calls pmsis_exit(), which on a target whose console is not a UART -- the
- * Crazyflie AI-deck, where printf goes to pins nothing is listening to -- means
- * the application simply stops mid-boot with no output at all. That is
+ * then calls pmsis_exit(), which on a target where nothing reads printf's output
+ * means the application simply stops mid-boot with no output at all. That is
  * indistinguishable from a wedged chip, a bad flash and an empty readfs, and each
  * of those has a completely different fix.
  *
@@ -169,9 +168,9 @@ size_t load_file_to_ram(const void *dest, const char *filename) {
    * completes first re-enters that state machine with stale state: the load hangs,
    * or rarely writes a stale chunk, depending on timing. It only happens when the
    * buffer and the file agree mod 8 -- otherwise readfs copies through its cache,
-   * which is immune -- so whether a network loaded reliably was a linker accident.
-   * pi_fs_direct_read() is one flash read per call. See the SDK's read_fs.c and
-   * examples/hyperbus_bench in the cf-lab repo. */
+   * which is immune -- so whether pi_fs_read() loads a network reliably is a
+   * linker accident. pi_fs_direct_read() is one flash read per call. See the
+   * SDK's read_fs.c. */
   size_t offset = 0;
   do {
     const size_t read_bytes = pi_fs_direct_read(fd, buffer, chunk);

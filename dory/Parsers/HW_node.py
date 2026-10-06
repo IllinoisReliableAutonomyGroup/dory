@@ -93,8 +93,8 @@ class HW_node(DORY_node):
                 if "bias" in name:
                     # 16x a grouped layer's bias is a Diana requirement. On PULP
                     # the layer copies only the real bias, and the inflated L2
-                    # weight buffer overran the arena the L3 tiler had planned
-                    # without it (a depthwise layer of MobileNet v1 at 320x240).
+                    # weight buffer would overrun the arena the L3 tiler planned
+                    # without it.
                     if groups == 1 or "Diana" not in self.HW_description["name"]:
                         bias_memory+=weights_dim[0]*self.bias_bits/8
                     else:

@@ -32,8 +32,3 @@ __attribute__((weak)) void dory_layer_done_l3(int layer_id, const char *name,
                                               unsigned int l3_output) {
   (void) layer_id; (void) name; (void) l3_output;
 }
-
-__attribute__((weak)) void dory_weights_staged(int layer_id, const char *name,
-                                               void *l2_weights, size_t size) {
-  (void) layer_id; (void) name; (void) l2_weights; (void) size;
-}

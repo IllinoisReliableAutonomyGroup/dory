@@ -24,9 +24,7 @@
 % else:
 <%doc>
   hal/pulp.h drags in archi/pulp.h, which needs PULP_CHIP_STR defined by the
-  PULP-OS build system. It used to be included unconditionally here, which made
-  the 2-level target's weights header uncompilable under the GAP SDK -- the
-  sibling input_h_template.h has always guarded this correctly.
+  PULP-OS build system, so a GAP SDK build must not include it.
 </%doc>
 #include <hal/pulp.h>
 % endif

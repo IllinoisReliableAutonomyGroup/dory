@@ -29,7 +29,8 @@ handled first by the higher-priority PMSIS event task re-enters it with stale st
 Fully connected layers with a bias and an 8-bit requantized output (the hidden layers of an MLP) got
 wrong, usually near-zero biases: the kernel indexed the int32 bias array through its `int8_t *`
 parameter. It now reads `int32_t` values, as `pulp_nn_linear_out_32` already did. The fix is in the
-`pulp-nn` submodule (`ttchalakov/pulp-nn`, branch `main`, commit `2f46d87`). (3d8d070)
+`pulp-nn` submodule (`IllinoisReliableAutonomyGroup/pulp-nn`, branch `master`, commit `2f46d87`).
+(3d8d070)
 
 **Square fully connected layers got transposed weights.**
 A `Gemm` with `transB=1` and equal input and output sizes gave wrong results: the NEMO and Quantlab
@@ -94,5 +95,6 @@ return code, before `mem_init()` exits on a failure. Weak and empty by default. 
 ## Build and tooling
 
 **Submodule URLs.**
-`pulp-nn` now points to `https://github.com/ttchalakov/pulp-nn.git` (branch `main`), which carries
-the bias fix above, instead of a relative URL. `pulp-nnx` uses HTTPS, not SSH. (3d8d070, b79b4af)
+`pulp-nn` now points to `https://github.com/IllinoisReliableAutonomyGroup/pulp-nn.git` (branch
+`master`), which carries the bias fix above, instead of a relative URL. `pulp-nnx` uses HTTPS, not
+SSH. (3d8d070, b79b4af)
